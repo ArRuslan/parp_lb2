@@ -1,3 +1,4 @@
+#include <bitset>
 #include <iostream>
 #include <cpuid.h>
 #include <cstdint>
@@ -86,8 +87,8 @@ void task_2_func(T* x, T* y, T* z, uint32_t n) {
 #define SIMD_FLOAT __m256
 #define SIMD_DOUBLE __m256d
 #define SIMD_LOAD(data) _mm256_loadu_si256(data)
-#define SIMD_LOADF(data) _mm256_load_ps(data)
-#define SIMD_LOADD(data) _mm256_load_pd(data)
+#define SIMD_LOADF(data) _mm256_loadu_ps(data)
+#define SIMD_LOADD(data) _mm256_loadu_pd(data)
 #define SIMD_ABS_I8(data) _mm256_abs_epi8(data)
 #define SIMD_ABS_I16(data) _mm256_abs_epi16(data)
 #define SIMD_ABS_I32(data) _mm256_abs_epi32(data)
@@ -103,8 +104,13 @@ void task_2_func(T* x, T* y, T* z, uint32_t n) {
 #define SIMD_SQRT_FLOAT(data) _mm256_sqrt_ps(data)
 #define SIMD_SQRT_DOUBLE(data) _mm256_sqrt_pd(data)
 #define SIMD_STORE(out, data) _mm256_storeu_si256(out, data)
-#define SIMD_STORE_FLOAT(out, data) _mm256_store_ps(out, data)
-#define SIMD_STORE_DOUBLE(out, data) _mm256_store_pd(out, data)
+#define SIMD_STORE_FLOAT(out, data) _mm256_storeu_ps(out, data)
+#define SIMD_STORE_DOUBLE(out, data) _mm256_storeu_pd(out, data)
+
+#define SIMD_SETZERO _mm256_setzero_si256
+#define SIMD_SLLI(data, bits) _mm256_slli_epi64(data, bits)
+#define SIMD_SRLI(data, bits) _mm256_srli_epi64(data, bits)
+#define SIMD_OR(data_a, data_b) _mm256_or_si256(data_a, data_b)
 #elif defined(__SSE2__) && defined(__SSE4_2__)
 #include <emmintrin.h>
 #include <smmintrin.h>
@@ -113,8 +119,8 @@ void task_2_func(T* x, T* y, T* z, uint32_t n) {
 #define SIMD_FLOAT __m128
 #define SIMD_DOUBLE __m128d
 #define SIMD_LOAD(data) _mm_loadu_si128(data)
-#define SIMD_LOADF(data) _mm_load_ps(data)
-#define SIMD_LOADD(data) _mm_load_pd(data)
+#define SIMD_LOADF(data) _mm_loadu_ps(data)
+#define SIMD_LOADD(data) _mm_loadu_pd(data)
 #define SIMD_ABS_I8(data) _mm_abs_epi8(data)
 #define SIMD_ABS_I16(data) _mm_abs_epi16(data)
 #define SIMD_ABS_I32(data) _mm_abs_epi32(data)
@@ -130,8 +136,13 @@ void task_2_func(T* x, T* y, T* z, uint32_t n) {
 #define SIMD_SQRT_FLOAT(data) _mm_sqrt_ps(data)
 #define SIMD_SQRT_DOUBLE(data) _mm_sqrt_pd(data)
 #define SIMD_STORE(out, data) _mm_storeu_si128(out, data)
-#define SIMD_STORE_FLOAT(out, data) _mm_store_ps(out, data)
-#define SIMD_STORE_DOUBLE(out, data) _mm_store_pd(out, data)
+#define SIMD_STORE_FLOAT(out, data) _mm_storeu_ps(out, data)
+#define SIMD_STORE_DOUBLE(out, data) _mm_storeu_pd(out, data)
+
+#define SIMD_SETZERO _mm_setzero_si128
+#define SIMD_SLLI(data, bits) _mm_slli_epi64(data, bits)
+#define SIMD_SRLI(data, bits) _mm_srli_epi64(data, bits)
+#define SIMD_OR(data_a, data_b) _mm_or_si128(data_a, data_b)
 #endif
 
 void task_2_func_simdeeznuts(int8_t* x, int8_t* y, int8_t* z, uint32_t n) {
@@ -434,18 +445,58 @@ void task_8() {
     // TODO
 }
 
+void task_9_print(SIMD_INT* simd_ints) {
+    auto* ints = (uint64_t*)simd_ints;
+    std::cout << "512-bit data: ";
+    for(int i = 0; i < 8; i++) {
+        std::cout << std::bitset<64>(ints[i]);
+    }
+
+    std::cout << "\n";
+}
+
 void task_9() {
-    //
+    uint64_t data[8] = {(uint64_t)0b11 << 62, 0, 0, 0, 0, 0, 0};
+    SIMD_INT simd_data[512/SIMD_BITS];
+
+    task_9_print((SIMD_INT*)&data[0]);
+
+    double start_time = omp_get_wtime();
+    for(int i = 0; i < 100000000; i++) {
+        for (int j = 0; j < 512/SIMD_BITS; j++) {
+            simd_data[j] = SIMD_LOAD((SIMD_INT*)(&data[j * (SIMD_BITS / 64)]));
+        }
+
+        for (int j = 0; j < 512/SIMD_BITS; j++) {
+            SIMD_INT shifted = SIMD_SLLI(simd_data[j], 1);
+            SIMD_INT high_bits = SIMD_SRLI(simd_data[j], 63);
+
+            if (j < (512/SIMD_BITS - 1)) {
+                simd_data[j + 1] = SIMD_OR(simd_data[j + 1], high_bits);
+            }
+
+            simd_data[j] = shifted;
+        }
+    }
+
+    double time_taken = omp_get_wtime() - start_time;
+    std::cout << "[" << SIMD_BITS << "] Time: " << std::fixed << std::setprecision(6) << time_taken << " seconds\n";
+
+    std::cout << "After 1-bit left shift:" << std::endl;
+    task_9_print(&simd_data[0]);
+
 }
 
 int main() {
-    task_1();
+    /*task_1();
     std::cout << "\n";
 
     task_2();
     std::cout << "\n";
 
     task_6();
-    std::cout << "\n";
+    std::cout << "\n";*/
+
+    task_9();
     return 0;
 }
