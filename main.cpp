@@ -78,106 +78,155 @@ void task_2_func(T* x, T* y, T* z, uint32_t n) {
         x[i] = (y[i] >= 0 ? y[i] : -y[i]) + (z[i] >= 0 ? z[i] : -z[i]);
 }
 
-#if defined(__SSE2__) && defined(__SSE4_2__)
+#if defined(__AVX2__)
+#include <immintrin.h>
+#include <vaesintrin.h>
+#define SIMD_BITS 256
+#define SIMD_INT __m256i
+#define SIMD_FLOAT __m256
+#define SIMD_DOUBLE __m256d
+#define SIMD_LOAD(data) _mm256_loadu_si256(data)
+#define SIMD_LOADF(data) _mm256_load_ps(data)
+#define SIMD_LOADD(data) _mm256_load_pd(data)
+#define SIMD_ABS_I8(data) _mm256_abs_epi8(data)
+#define SIMD_ABS_I16(data) _mm256_abs_epi16(data)
+#define SIMD_ABS_I32(data) _mm256_abs_epi32(data)
+#define SIMD_ABS_I64(data) _mm256_blendv_epi8(data, _mm256_sub_epi64(_mm256_setzero_si256(), data), _mm256_cmpgt_epi64(_mm256_setzero_si256(), data))
+#define SIMD_ABS_FLOAT(data) _mm256_andnot_ps(_mm256_set1_ps(-0.0), data)
+#define SIMD_ABS_DOUBLE(data) _mm256_andnot_pd(_mm256_set1_pd(-0.0), data)
+#define SIMD_ADD_I8(a, b) _mm256_add_epi8(a, b)
+#define SIMD_ADD_I16(a, b) _mm256_add_epi16(a, b)
+#define SIMD_ADD_I32(a, b) _mm256_add_epi32(a, b)
+#define SIMD_ADD_I64(a, b) _mm256_add_epi64(a, b)
+#define SIMD_ADD_FLOAT(a, b) _mm256_add_ps(a, b)
+#define SIMD_ADD_DOUBLE(a, b) _mm256_add_pd(a, b)
+#define SIMD_SQRT_FLOAT(data) _mm256_sqrt_ps(data)
+#define SIMD_SQRT_DOUBLE(data) _mm256_sqrt_pd(data)
+#define SIMD_STORE(out, data) _mm256_storeu_si256(out, data)
+#define SIMD_STORE_FLOAT(out, data) _mm256_store_ps(out, data)
+#define SIMD_STORE_DOUBLE(out, data) _mm256_store_pd(out, data)
+#elif defined(__SSE2__) && defined(__SSE4_2__)
 #include <emmintrin.h>
 #include <smmintrin.h>
+#define SIMD_BITS 128
+#define SIMD_INT __m128i
+#define SIMD_FLOAT __m128
+#define SIMD_DOUBLE __m128d
+#define SIMD_LOAD(data) _mm_loadu_si128(data)
+#define SIMD_LOADF(data) _mm_load_ps(data)
+#define SIMD_LOADD(data) _mm_load_pd(data)
+#define SIMD_ABS_I8(data) _mm_abs_epi8(data)
+#define SIMD_ABS_I16(data) _mm_abs_epi16(data)
+#define SIMD_ABS_I32(data) _mm_abs_epi32(data)
+#define SIMD_ABS_I64(data) _mm_sub_epi64(data, _mm_and_si128(_mm_cmpgt_epi64(_mm_setzero_si128(), data), _mm_add_epi64(data, _mm_set1_epi64x(1))))
+#define SIMD_ABS_FLOAT(data) _mm_andnot_ps(_mm_set_ps1(-0.0), data)
+#define SIMD_ABS_DOUBLE(data) _mm_andnot_pd(_mm_set_pd1(-0.0), data)
+#define SIMD_ADD_I8(a, b) _mm_add_epi8(a, b)
+#define SIMD_ADD_I16(a, b) _mm_add_epi16(a, b)
+#define SIMD_ADD_I32(a, b) _mm_add_epi32(a, b)
+#define SIMD_ADD_I64(a, b) _mm_add_epi64(a, b)
+#define SIMD_ADD_FLOAT(a, b) _mm_add_ps(a, b)
+#define SIMD_ADD_DOUBLE(a, b) _mm_add_pd(a, b)
+#define SIMD_SQRT_FLOAT(data) _mm_sqrt_ps(data)
+#define SIMD_SQRT_DOUBLE(data) _mm_sqrt_pd(data)
+#define SIMD_STORE(out, data) _mm_storeu_si128(out, data)
+#define SIMD_STORE_FLOAT(out, data) _mm_store_ps(out, data)
+#define SIMD_STORE_DOUBLE(out, data) _mm_store_pd(out, data)
+#endif
 
 void task_2_func_simdeeznuts(int8_t* x, int8_t* y, int8_t* z, uint32_t n) {
-    constexpr uint32_t batch_size = 128 / (sizeof(int8_t) * 8);
+    constexpr uint32_t batch_size = SIMD_BITS / (sizeof(int8_t) * 8);
     uint32_t i;
     for (i = 0; i + batch_size <= n; i += batch_size) {
-        __m128i y_simd = _mm_loadu_si128((const __m128i*)&y[i]);
-        __m128i z_simd = _mm_loadu_si128((const __m128i*)&z[i]);
-        y_simd = _mm_abs_epi8(y_simd);
-        z_simd = _mm_abs_epi8(z_simd);
-        __m128i sum = _mm_add_epi8(y_simd, z_simd);
-        _mm_storeu_si128((__m128i*)&x[i], sum);
+        SIMD_INT y_simd = SIMD_LOAD((const SIMD_INT*)&y[i]);
+        SIMD_INT z_simd = SIMD_LOAD((const SIMD_INT*)&z[i]);
+        y_simd = SIMD_ABS_I8(y_simd);
+        z_simd = SIMD_ABS_I8(z_simd);
+        SIMD_INT sum = SIMD_ADD_I8(y_simd, z_simd);
+        SIMD_STORE((SIMD_INT*)&x[i], sum);
     }
     for (; i < n; i++)
         x[i] = (y[i] >= 0 ? y[i] : -y[i]) + (z[i] >= 0 ? z[i] : -z[i]);
 }
 
 void task_2_func_simdeeznuts(int16_t* x, int16_t* y, int16_t* z, uint32_t n) {
-    constexpr uint32_t batch_size = 128 / (sizeof(int16_t) * 8);
+    constexpr uint32_t batch_size = SIMD_BITS / (sizeof(int16_t) * 8);
     uint32_t i;
     for (i = 0; i + batch_size <= n; i += batch_size) {
-        __m128i y_simd = _mm_loadu_si128((const __m128i*)&y[i]);
-        __m128i z_simd = _mm_loadu_si128((const __m128i*)&z[i]);
-        y_simd = _mm_abs_epi16(y_simd);
-        z_simd = _mm_abs_epi16(z_simd);
-        __m128i sum = _mm_add_epi16(y_simd, z_simd);
-        _mm_storeu_si128((__m128i*)&x[i], sum);
+        SIMD_INT y_simd = SIMD_LOAD((const SIMD_INT*)&y[i]);
+        SIMD_INT z_simd = SIMD_LOAD((const SIMD_INT*)&z[i]);
+        y_simd = SIMD_ABS_I16(y_simd);
+        z_simd = SIMD_ABS_I16(z_simd);
+        SIMD_INT sum = SIMD_ADD_I16(y_simd, z_simd);
+        SIMD_STORE((SIMD_INT*)&x[i], sum);
     }
     for (; i < n; i++)
         x[i] = (y[i] >= 0 ? y[i] : -y[i]) + (z[i] >= 0 ? z[i] : -z[i]);
 }
 
 void task_2_func_simdeeznuts(int32_t* x, int32_t* y, int32_t* z, uint32_t n) {
-    constexpr uint32_t batch_size = 128 / (sizeof(int32_t) * 8);
+    constexpr uint32_t batch_size = SIMD_BITS / (sizeof(int32_t) * 8);
     uint32_t i;
     for (i = 0; i + batch_size <= n; i += batch_size) {
-        __m128i y_simd = _mm_loadu_si128((const __m128i*)&y[i]);
-        __m128i z_simd = _mm_loadu_si128((const __m128i*)&z[i]);
-        y_simd = _mm_abs_epi32(y_simd);
-        z_simd = _mm_abs_epi32(z_simd);
-        __m128i sum = _mm_add_epi32(y_simd, z_simd);
-        _mm_storeu_si128((__m128i*)&x[i], sum);
+        SIMD_INT y_simd = SIMD_LOAD((const SIMD_INT*)&y[i]);
+        SIMD_INT z_simd = SIMD_LOAD((const SIMD_INT*)&z[i]);
+        y_simd = SIMD_ABS_I32(y_simd);
+        z_simd = SIMD_ABS_I32(z_simd);
+        SIMD_INT sum = SIMD_ADD_I32(y_simd, z_simd);
+        SIMD_STORE((SIMD_INT*)&x[i], sum);
     }
     for (; i < n; i++)
         x[i] = (y[i] >= 0 ? y[i] : -y[i]) + (z[i] >= 0 ? z[i] : -z[i]);
 }
 
 void task_2_func_simdeeznuts(int64_t* x, int64_t* y, int64_t* z, uint32_t n) {
-    constexpr uint32_t batch_size = 128 / (sizeof(int64_t) * 8);
+    constexpr uint32_t batch_size = SIMD_BITS / (sizeof(int64_t) * 8);
     uint32_t i;
     for (i = 0; i + batch_size <= n; i += batch_size) {
-        __m128i y_simd = _mm_loadu_si128((const __m128i*)&y[i]);
-        __m128i z_simd = _mm_loadu_si128((const __m128i*)&z[i]);
+        SIMD_INT y_simd = SIMD_LOAD((const SIMD_INT*)&y[i]);
+        SIMD_INT z_simd = SIMD_LOAD((const SIMD_INT*)&z[i]);
 
-        y_simd = _mm_sub_epi64(y_simd, _mm_and_si128(_mm_cmpgt_epi64(_mm_setzero_si128(), y_simd), _mm_add_epi64(y_simd, _mm_set1_epi64x(1))));
-        z_simd = _mm_sub_epi64(z_simd, _mm_and_si128(_mm_cmpgt_epi64(_mm_setzero_si128(), z_simd), _mm_add_epi64(z_simd, _mm_set1_epi64x(1))));
+        y_simd = SIMD_ABS_I64(y_simd);
+        z_simd = SIMD_ABS_I64(z_simd);
 
-        __m128i sum = _mm_add_epi64(y_simd, z_simd);
-        _mm_storeu_si128((__m128i*)&x[i], sum);
+        SIMD_INT sum = SIMD_ADD_I64(y_simd, z_simd);
+        SIMD_STORE((SIMD_INT*)&x[i], sum);
     }
     for (; i < n; i++)
         x[i] = (y[i] >= 0 ? y[i] : -y[i]) + (z[i] >= 0 ? z[i] : -z[i]);
 }
 
 void task_2_func_simdeeznuts(float* x, float* y, float* z, uint32_t n) {
-    constexpr uint32_t batch_size = 128 / (sizeof(float) * 8);
-    __m128 abs_mask = _mm_set_ps1(-0.0);
+    constexpr uint32_t batch_size = SIMD_BITS / (sizeof(float) * 8);
 
     uint32_t i;
     for (i = 0; i + batch_size <= n; i += batch_size) {
-        __m128 y_simd = _mm_load_ps(&y[i]);
-        __m128 z_simd = _mm_load_ps(&z[i]);
-        y_simd = _mm_andnot_ps(abs_mask, y_simd);
-        z_simd = _mm_andnot_ps(abs_mask, z_simd);
-        __m128 sum = _mm_add_ps(y_simd, z_simd);
-        _mm_store_ps(&x[i], sum);
+        SIMD_FLOAT y_simd = SIMD_LOADF(&y[i]);
+        SIMD_FLOAT z_simd = SIMD_LOADF(&z[i]);
+        y_simd = SIMD_ABS_FLOAT(y_simd);
+        z_simd = SIMD_ABS_FLOAT(z_simd);
+        SIMD_FLOAT sum = SIMD_ADD_FLOAT(y_simd, z_simd);
+        SIMD_STORE_FLOAT(&x[i], sum);
     }
     for (; i < n; i++)
         x[i] = (y[i] >= 0 ? y[i] : -y[i]) + (z[i] >= 0 ? z[i] : -z[i]);
 }
 
 void task_2_func_simdeeznuts(double* x, double* y, double* z, uint32_t n) {
-    constexpr uint32_t batch_size = 128 / (sizeof(double) * 8);
-    __m128d abs_mask = _mm_set_pd1(-0.0);
+    constexpr uint32_t batch_size = SIMD_BITS / (sizeof(double) * 8);
 
     uint32_t i;
     for (i = 0; i + batch_size <= n; i += batch_size) {
-        __m128d y_simd = _mm_load_pd(&y[i]);
-        __m128d z_simd = _mm_load_pd(&z[i]);
-        y_simd = _mm_andnot_pd(abs_mask, y_simd);
-        z_simd = _mm_andnot_pd(abs_mask, z_simd);
-        __m128d sum = _mm_add_pd(y_simd, z_simd);
-        _mm_store_pd(&x[i], sum);
+        SIMD_DOUBLE y_simd = SIMD_LOADD(&y[i]);
+        SIMD_DOUBLE z_simd = SIMD_LOADD(&z[i]);
+        y_simd = SIMD_ABS_DOUBLE(y_simd);
+        z_simd = SIMD_ABS_DOUBLE(z_simd);
+        SIMD_DOUBLE sum = SIMD_ADD_DOUBLE(y_simd, z_simd);
+        SIMD_STORE_DOUBLE(&x[i], sum);
     }
     for (; i < n; i++)
         x[i] = (y[i] >= 0 ? y[i] : -y[i]) + (z[i] >= 0 ? z[i] : -z[i]);
 }
-#endif
 
 template<typename T>
 void task_2_measure_simd_nosimd(const std::string& type_name, T* x, T* y, T* z, void(*simd_func)(T*, T*, T*, uint32_t)) {
@@ -308,34 +357,29 @@ void task_6_func(T* x, T* y, uint32_t n) {
         x[i] = std::sqrt(y[i]);
 }
 
-#if defined(__SSE2__) && defined(__SSE4_2__)
-#include <emmintrin.h>
-#include <smmintrin.h>
-
 void task_6_func_simdeeznuts(float* x, float* y, uint32_t n) {
-    constexpr uint32_t batch_size = 128 / (sizeof(float) * 8);
+    constexpr uint32_t batch_size = SIMD_BITS / (sizeof(float) * 8);
 
     uint32_t i;
     for (i = 0; i + batch_size <= n; i += batch_size) {
-        __m128 y_simd = _mm_load_ps(&y[i]);
-        _mm_store_ps(&x[i], _mm_sqrt_ps(y_simd));
+        SIMD_FLOAT y_simd = SIMD_LOADF(&y[i]);
+        SIMD_STORE_FLOAT(&x[i], SIMD_SQRT_FLOAT(y_simd));
     }
     for (; i < n; i++)
         x[i] = std::sqrt(y[i]);
 }
 
 void task_6_func_simdeeznuts(double* x, double* y, uint32_t n) {
-    constexpr uint32_t batch_size = 128 / (sizeof(double) * 8);
+    constexpr uint32_t batch_size = SIMD_BITS / (sizeof(double) * 8);
 
     uint32_t i;
     for (i = 0; i + batch_size <= n; i += batch_size) {
-        __m128d y_simd = _mm_load_pd(&y[i]);
-        _mm_store_pd(&x[i], _mm_sqrt_pd(y_simd));
+        SIMD_DOUBLE y_simd = SIMD_LOADD(&y[i]);
+        SIMD_STORE_DOUBLE(&x[i], SIMD_SQRT_DOUBLE(y_simd));
     }
     for (; i < n; i++)
         x[i] = std::sqrt(y[i]);
 }
-#endif
 
 template<typename T>
 void task_6_measure_simd_nosimd(const std::string& type_name, T* x, T* y, void(*simd_func)(T* x, T* y, uint32_t n)) {
@@ -384,6 +428,14 @@ void task_6_double() {
 void task_6() {
     task_6_float();
     task_6_double();
+}
+
+void task_8() {
+    // TODO
+}
+
+void task_9() {
+    //
 }
 
 int main() {
