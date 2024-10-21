@@ -5,6 +5,8 @@
 #include <iomanip>
 #include <omp.h>
 #include <random>
+#include <complex>
+#include <cstring>
 
 // ecx
 #define SSE3 (1 << 0)
@@ -135,6 +137,8 @@ void task_2_func(T* x, T* y, T* z, uint32_t n) {
 #define SIMD_ADD_DOUBLE(a, b) _mm_add_pd(a, b)
 #define SIMD_SQRT_FLOAT(data) _mm_sqrt_ps(data)
 #define SIMD_SQRT_DOUBLE(data) _mm_sqrt_pd(data)
+#define SIMD_SUB_FLOAT(a, b) _mm_sub_ps(a, b)
+#define SIMD_MUL_FLOAT(a, b) _mm_mul_ps(a, b)
 #define SIMD_STORE(out, data) _mm_storeu_si128(out, data)
 #define SIMD_STORE_FLOAT(out, data) _mm_storeu_ps(out, data)
 #define SIMD_STORE_DOUBLE(out, data) _mm_storeu_pd(out, data)
@@ -250,7 +254,7 @@ void task_2_measure_simd_nosimd(const std::string& type_name, T* x, T* y, T* z, 
     simd_func(x, y, z, arr_size);
     double simd_time = omp_get_wtime() - start_time;
     std::cout << "[" << type_name << "] Time (simd): " << std::fixed << std::setprecision(6) << simd_time << " seconds\n";
-    std::cout << "[" << type_name << "] SIMD (SSE) is " << std::fixed << std::setprecision(2) << nosimd_time / simd_time << " times faster\n";
+    std::cout << "[" << type_name << "] SIMD is " << std::fixed << std::setprecision(2) << nosimd_time / simd_time << " times faster\n";
 }
 
 void task_2_int8() {
@@ -403,7 +407,7 @@ void task_6_measure_simd_nosimd(const std::string& type_name, T* x, T* y, void(*
     simd_func(x, y, arr_size);
     double simd_time = omp_get_wtime() - start_time;
     std::cout << "[" << type_name << "] Time (simd): " << std::fixed << std::setprecision(6) << simd_time << " seconds\n";
-    std::cout << "[" << type_name << "] SIMD (SSE) is " << std::fixed << std::setprecision(2) << nosimd_time / simd_time << " times faster\n";
+    std::cout << "[" << type_name << "] SIMD is " << std::fixed << std::setprecision(2) << nosimd_time / simd_time << " times faster\n";
 }
 
 void task_6_float() {
@@ -441,8 +445,58 @@ void task_6() {
     task_6_double();
 }
 
+void task_8_func(std::complex<float>* x, std::complex<float>* y, std::complex<float>* z, uint32_t n) {
+    for(uint32_t i = 0; i < n; i++)
+        x[i] = y[i] * z[i];
+}
+
+void task_8_func_simdeeznuts(std::complex<float>* x, std::complex<float>* y, std::complex<float>* z, uint32_t n) {
+    constexpr uint32_t batch_size = SIMD_BITS / (sizeof(float) * 8);
+
+    uint32_t i;
+    for (i = 0; i + batch_size <= n; i += batch_size) {
+        const SIMD_FLOAT y_simd_real = SIMD_LOADF(reinterpret_cast<const float*>(&y[i]) + 0);
+        const SIMD_FLOAT y_simd_imag = SIMD_LOADF(reinterpret_cast<const float*>(&y[i]) + 1);
+        const SIMD_FLOAT z_simd_real = SIMD_LOADF(reinterpret_cast<const float*>(&z[i]) + 0);
+        const SIMD_FLOAT z_simd_imag = SIMD_LOADF(reinterpret_cast<const float*>(&z[i]) + 1);
+
+        const SIMD_FLOAT x_real = SIMD_SUB_FLOAT(SIMD_MUL_FLOAT(y_simd_real, z_simd_real), SIMD_MUL_FLOAT(y_simd_imag, z_simd_imag));
+        const SIMD_FLOAT x_imag = SIMD_ADD_FLOAT(SIMD_MUL_FLOAT(y_simd_real, z_simd_imag), SIMD_MUL_FLOAT(y_simd_imag, z_simd_real));
+
+        SIMD_STORE_FLOAT(reinterpret_cast<float*>(&x[i]) + 0, x_real);
+        SIMD_STORE_FLOAT(reinterpret_cast<float*>(&x[i]) + 1, x_imag);
+    }
+    for (; i < n; i++)
+        x[i] = y[i] * z[i];
+}
+
 void task_8() {
-    // TODO
+    std::uniform_real_distribution<float> randfloat;
+
+    auto* x = new std::complex<float>[arr_size];
+    auto* y = new std::complex<float>[arr_size];
+    auto* z = new std::complex<float>[arr_size];
+    for(int i = 0; i < arr_size; i++) {
+        y[i] = {randfloat(rand_eng), randfloat(rand_eng)};
+        z[i] = {randfloat(rand_eng), randfloat(rand_eng)};
+    }
+
+    memset(x, 0, arr_size * sizeof(std::complex<float>));
+    double start_time = omp_get_wtime();
+    task_8_func(x, y, z, arr_size);
+    double nosimd_time = omp_get_wtime() - start_time;
+    std::cout << "[float-complex] Time (no simd): " << std::fixed << std::setprecision(6) << nosimd_time << " seconds, x[0] = " << x[0] << "\n";
+
+    memset(x, 0, arr_size * sizeof(std::complex<float>));
+    start_time = omp_get_wtime();
+    task_8_func_simdeeznuts(x, y, z, arr_size);
+    double simd_time = omp_get_wtime() - start_time;
+    std::cout << "[float-complex] Time (simd): " << std::fixed << std::setprecision(6) << simd_time << " seconds, x[0] = " << x[0] << "\n";
+    std::cout << "[float-complex] SIMD is " << std::fixed << std::setprecision(2) << nosimd_time / simd_time << " times faster\n";
+
+    delete x;
+    delete y;
+    delete z;
 }
 
 void task_9_print(SIMD_INT* simd_ints) {
@@ -488,15 +542,25 @@ void task_9() {
 }
 
 int main() {
-    /*task_1();
+    std::cout << "Task 1\n";
+    task_1();
     std::cout << "\n";
 
+    std::cout << "Task 2\n";
     task_2();
     std::cout << "\n";
 
+    std::cout << "Task 6\n";
     task_6();
-    std::cout << "\n";*/
+    std::cout << "\n";
 
+    std::cout << "Task 8\n";
+    task_8();
+    std::cout << "\n";
+
+    std::cout << "Task 9\n";
     task_9();
+    std::cout << "\n";
+
     return 0;
 }
